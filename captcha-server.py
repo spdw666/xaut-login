@@ -47,9 +47,8 @@ def predict():
 
 if __name__ == "__main__":
     try:
-        app.run(host="127.0.0.1", port=8765)
-    except OSError:
-        pass  # 端口被占用=服务已在运行(开机自启与手动启动并存时)，静默退出
+        port = int(os.environ.get("XAUT_PORT", "8765"))
+        app.run(host="127.0.0.1", port=port)
     except Exception:
         # 无窗口模式下把启动失败原因写到 exe 旁边，方便排查
         try:
