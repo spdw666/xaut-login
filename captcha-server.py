@@ -1,17 +1,49 @@
 # -*- coding: utf-8 -*-
-# XAUT 教务系统验证码本地识别服务 (ddddocr + Flask)
-# 启动: python captcha-server.py   端口: 127.0.0.1:8765
-from flask import Flask, request, jsonify
-import ddddocr, base64, sys, os, traceback
+"""XAUT 教务系统验证码本地识别服务。"""
+
+import os
+import sys
+import traceback
+from base64 import b64decode
+from binascii import Error as Base64Error
+
+import ddddocr
+from flask import Flask, jsonify, request
 
 ocr = ddddocr.DdddOcr(show_ad=False)
 app = Flask(__name__)
+MAX_IMAGE_BYTES = 2 * 1024 * 1024
+
+
+@app.get("/health")
+def health():
+    """Return a simple, browser-friendly readiness check."""
+    return jsonify(status="ok")
+
 
 @app.post("/predict")
 def predict():
-    data = request.get_json(silent=True) or {}
-    raw = base64.b64decode(data["img"]) if data.get("img") else request.data
-    return jsonify(code=ocr.classification(raw))
+    data = request.get_json(silent=True)
+    if data is not None:
+        if not isinstance(data, dict) or not data.get("img"):
+            return jsonify(error="an image is required"), 400
+        try:
+            raw = b64decode(data["img"], validate=True)
+        except (Base64Error, TypeError):
+            return jsonify(error="img must be valid base64 data"), 400
+    else:
+        raw = request.get_data()
+
+    if not raw:
+        return jsonify(error="an image is required"), 400
+    if len(raw) > MAX_IMAGE_BYTES:
+        return jsonify(error="image is too large"), 413
+
+    try:
+        return jsonify(code=ocr.classification(raw))
+    except Exception:
+        return jsonify(error="the image could not be recognized"), 422
+
 
 if __name__ == "__main__":
     try:

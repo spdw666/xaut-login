@@ -12,8 +12,8 @@ if errorlevel 1 (
 ) else (
   set PY=python
 )
-echo Installing ddddocr + flask (takes a minute)...
-%PY% -m pip install --disable-pip-version-check ddddocr flask
+echo Installing dependencies (takes a minute)...
+%PY% -m pip install --disable-pip-version-check -r "%~dp0requirements.txt"
 if errorlevel 1 ( echo [ERROR] pip install failed. & pause & exit /b 1 )
 where pythonw >nul 2>nul && start "" pythonw "%~dp0captcha-server.py" || start "" %PY% "%~dp0captcha-server.py"
 echo Done! OCR service started in background.
