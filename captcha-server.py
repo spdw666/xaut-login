@@ -47,8 +47,10 @@ def predict():
 
 if __name__ == "__main__":
     try:
-        port = int(os.environ.get("XAUT_PORT", "8765"))
-        app.run(host="127.0.0.1", port=port)
+        app.run(host="127.0.0.1", port=8765)
+    except OSError:
+        # 开机自启与手动启动同时发生时，已有服务继续运行即可。
+        pass
     except Exception:
         # 无窗口模式下把启动失败原因写到 exe 旁边，方便排查
         try:
