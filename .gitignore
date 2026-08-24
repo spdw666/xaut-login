@@ -1,0 +1,8 @@
+build/
+dist/
+*.spec
+*.log
+
+# 大文件(>100MB, GitHub 单文件上限)，作为 Release 附件分发
+/启动识别服务.exe
+/xaut-login-pack.zip
