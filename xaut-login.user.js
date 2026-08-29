@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         西理工教务登录助手
 // @namespace    xaut-local
-// @version      0.6.2
+// @version      0.6.3
 // @description  本地 OCR 识别验证码 + 云更新检查 + 一键导出每周课表
 // @match        https://jwgl.xaut.edu.cn/*
 // @grant        GM_xmlhttpRequest
@@ -85,18 +85,25 @@
   }
 
   // ================= 每周课表导出 =================
+  function isTopFrame() {
+    try { return window.top === window; } catch (_) { return true; }
+  }
+
   function allDocuments() {
-    const docs = [document];
-    try {
-      const top = window.top && window.top.document;
-      if (top && top !== document && !docs.includes(top)) docs.push(top);
-    } catch (_) {}
-    for (let i = 0; i < window.frames.length; i++) {
+    const docs = [];
+    const visited = new Set();
+    const visit = (frame) => {
       try {
-        const d = window.frames[i].document;
-        if (d && !docs.includes(d)) docs.push(d);
-      } catch (_) {}
-    }
+        if (!frame || visited.has(frame)) return;
+        visited.add(frame);
+        const doc = frame.document;
+        if (doc) docs.push(doc);
+        for (let i = 0; i < frame.frames.length; i++) visit(frame.frames[i]);
+      } catch (_) {
+        // 跨域 iframe 无权访问，跳过即可；同源课表 iframe 会递归纳入搜索。
+      }
+    };
+    try { visit(window.top); } catch (_) { visit(window); }
     return docs;
   }
 
@@ -338,7 +345,9 @@
   }
 
   function initTimetableExport() {
-    // 持续监听：课表可能在 iframe/SPA 中延迟加载，永不放弃；按钮挂在顶层页面
+    // 仅顶层页管理按钮。若每个 iframe 都改同一个顶层按钮，会造成显示/隐藏互相覆盖而闪烁。
+    if (!isTopFrame()) return;
+    // 持续监听：课表可能在嵌套 iframe/SPA 中延迟加载，永不放弃；按钮挂在顶层页面
     setInterval(() => {
       const host = hostDocument();
       const existing = host.getElementById("xaut-login-export-btn");
@@ -361,9 +370,11 @@
     }, 1000);
   }
 
-  // 每个页面都执行：云更新检查 + 课表导出按钮
-  checkForUpdate();
-  initTimetableExport();
+  // 仅顶层页检查更新、创建导出按钮；登录表单填充仍可在其所在 iframe 内正常执行。
+  if (isTopFrame()) {
+    checkForUpdate();
+    initTimetableExport();
+  }
 
   if (!input || !captchaImage) return;
 
