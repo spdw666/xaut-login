@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         西理工教务登录助手
 // @namespace    xaut-local
-// @version      0.6.3
+// @version      0.7.0
 // @description  本地 OCR 识别验证码 + 云更新检查 + 一键导出每周课表
 // @match        https://jwgl.xaut.edu.cn/*
 // @grant        GM_xmlhttpRequest
@@ -152,6 +152,100 @@
     return row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",");
   }
 
+  function xmlEscape(value) {
+    return String(value ?? "").replace(/[&<>'"]/g, (character) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&apos;", "\"": "&quot;",
+    }[character]));
+  }
+
+  function excelColumn(index) {
+    let result = "";
+    for (let value = index + 1; value; value = Math.floor((value - 1) / 26)) result = String.fromCharCode(65 + (value - 1) % 26) + result;
+    return result;
+  }
+
+  // 生成一个不依赖第三方库的最小 XLSX 文件。CSV 无法保存列宽、自动换行和行高，打开后会像截图一样拥挤。
+  function crc32(bytes) {
+    let crc = -1;
+    for (const byte of bytes) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0);
+    }
+    return (crc ^ -1) >>> 0;
+  }
+
+  function zipStore(files) {
+    const encoder = new TextEncoder();
+    const parts = [];
+    const directory = [];
+    let offset = 0;
+    for (const file of files) {
+      const name = encoder.encode(file.name);
+      const data = encoder.encode(file.content);
+      const header = new Uint8Array(30 + name.length);
+      const view = new DataView(header.buffer);
+      view.setUint32(0, 0x04034B50, true);
+      view.setUint16(4, 20, true);
+      view.setUint16(26, name.length, true);
+      view.setUint32(14, crc32(data), true);
+      view.setUint32(18, data.length, true);
+      view.setUint32(22, data.length, true);
+      header.set(name, 30);
+      parts.push(header, data);
+      directory.push({ name, data, offset });
+      offset += header.length + data.length;
+    }
+    const directoryOffset = offset;
+    for (const entry of directory) {
+      const header = new Uint8Array(46 + entry.name.length);
+      const view = new DataView(header.buffer);
+      view.setUint32(0, 0x02014B50, true);
+      view.setUint16(4, 20, true);
+      view.setUint16(6, 20, true);
+      view.setUint32(16, crc32(entry.data), true);
+      view.setUint32(20, entry.data.length, true);
+      view.setUint32(24, entry.data.length, true);
+      view.setUint16(28, entry.name.length, true);
+      view.setUint32(42, entry.offset, true);
+      header.set(entry.name, 46);
+      parts.push(header);
+      offset += header.length;
+    }
+    const end = new Uint8Array(22);
+    const endView = new DataView(end.buffer);
+    endView.setUint32(0, 0x06054B50, true);
+    endView.setUint16(8, directory.length, true);
+    endView.setUint16(10, directory.length, true);
+    endView.setUint32(12, offset - directoryOffset, true);
+    endView.setUint32(16, directoryOffset, true);
+    parts.push(end);
+    return new Blob(parts, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  }
+
+  function worksheetXml(rows, widths, contentRowHeight) {
+    const cols = widths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join("");
+    const data = rows.map((row, rowIndex) => {
+      const cells = row.map((value, columnIndex) => `<c r="${excelColumn(columnIndex)}${rowIndex + 1}" s="${rowIndex ? 2 : 1}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`).join("");
+      return `<row r="${rowIndex + 1}" ht="${rowIndex ? contentRowHeight : 26}" customHeight="1">${cells}</row>`;
+    }).join("");
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols>${cols}</cols><sheetData>${data}</sheetData></worksheet>`;
+  }
+
+  function createTimetableWorkbook(result) {
+    const overview = result.rows || [];
+    const details = [["星期", "节次", "课程信息"], ...(result.records || [])];
+    const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Microsoft YaHei"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Microsoft YaHei"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0B7A61"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/></border><border><left style="thin"><color rgb="FFD1D5DB"/></left><right style="thin"><color rgb="FFD1D5DB"/></right><top style="thin"><color rgb="FFD1D5DB"/></top><bottom style="thin"><color rgb="FFD1D5DB"/></bottom></border></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="3"><xf xfId="0"/><xf fontId="1" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf fontId="0" borderId="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs></styleSheet>`;
+    return zipStore([
+      { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>` },
+      { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+      { name: "xl/workbook.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="课表" sheetId="1" r:id="rId1"/><sheet name="课程明细" sheetId="2" r:id="rId2"/></sheets></workbook>` },
+      { name: "xl/_rels/workbook.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
+      { name: "xl/styles.xml", content: styles },
+      { name: "xl/worksheets/sheet1.xml", content: worksheetXml(overview, [16, 34, 34, 34, 34, 34, 34, 34], 92) },
+      { name: "xl/worksheets/sheet2.xml", content: worksheetXml(details, [16, 18, 72], 62) },
+    ]);
+  }
+
   // 经典正方 <table> 课表
   function buildTableCsv(table) {
     const rows = [...table.querySelectorAll("tr")];
@@ -162,9 +256,10 @@
       dayCount = cells.filter((c) => /^(周|星期)[一二三四五六日天]/.test((c.innerText || "").trim())).length;
       if (dayCount >= 5) headerIndex = i;
     }
-    if (headerIndex < 0) return { csv: "", courseCount: 0 };
+    if (headerIndex < 0) return { csv: "", rows: [], records: [], courseCount: 0 };
     const headerRow = [...rows[headerIndex].querySelectorAll("th, td")];
     const lines = [[(headerRow[0].innerText || "节次").trim(), ...headerRow.slice(1, 1 + dayCount).map((c) => (c.innerText || "").trim())]];
+    const records = [];
     let courseCount = 0;
     for (let i = headerIndex + 1; i < rows.length; i++) {
       const cells = [...rows[i].querySelectorAll("th, td")];
@@ -174,33 +269,40 @@
       const row = [label];
       for (let d = 1; d <= dayCount; d++) {
         const text = cells[d] ? cellText(cells[d]) : "";
-        if (text) courseCount++;
+        if (text) {
+          courseCount++;
+          records.push([lines[0][d], label, text]);
+        }
         row.push(text);
       }
       lines.push(row);
     }
     // 带 BOM 的 UTF-8，Excel 直接打开中文不乱码
-    return { csv: "\uFEFF" + lines.map(csvLine).join("\r\n"), courseCount };
+    return { csv: "\uFEFF" + lines.map(csvLine).join("\r\n"), rows: lines, records, courseCount };
   }
 
   // 新版日历式 UL/LI 课表（如西理工：table-header + table-body + 绝对定位课程块）
   function buildUlGridCsv(headerUl) {
     const grid = headerUl.closest(".table, .timetable, .schedule, .calendar") || headerUl.parentElement;
-    if (!grid) return { csv: "", courseCount: 0 };
+    if (!grid) return { csv: "", rows: [], records: [], courseCount: 0 };
     const headerLis = [...headerUl.children].filter((el) => el.tagName === "LI");
     const dayCount = headerLis.length - 1;
-    if (dayCount < 5) return { csv: "", courseCount: 0 };
+    if (dayCount < 5) return { csv: "", rows: [], records: [], courseCount: 0 };
     const lines = [["节次", ...headerLis.slice(1, 1 + dayCount).map(cellText)]];
     const body = grid.querySelector(".table-body");
-    if (!body) return { csv: "", courseCount: 0 };
+    if (!body) return { csv: "", rows: [], records: [], courseCount: 0 };
 
     const rowElements = [...body.children].filter((child) => child.tagName === "UL");
     const rowLabels = rowElements.map((row) => cellText(row.querySelector("li") || row))
       .filter((label) => /(大节|小节|节)|^\d+(?:\s*[-~]\s*\d+)?$/.test(label));
-    if (!rowLabels.length) return { csv: "", courseCount: 0 };
+    if (!rowLabels.length) return { csv: "", rows: [], records: [], courseCount: 0 };
 
     const cells = rowLabels.map(() => Array(dayCount).fill(""));
-    const courseBlocks = [...body.querySelectorAll(".table-class, [data-course-name], [data-course]")];
+    // 优先取页面标记为 div-context 的叶子课程块。若页面版本没有该类名，才回退到不含嵌套 table-class 的叶子节点。
+    const markedBlocks = [...body.querySelectorAll(".table-class.div-context, [data-course-name], [data-course]")];
+    const courseBlocks = markedBlocks.length ? markedBlocks : [...body.querySelectorAll(".table-class")]
+      .filter((block) => !block.querySelector(".table-class"));
+    const records = [];
     let courseCount = 0;
     for (const block of courseBlocks) {
       const className = String(block.className || "");
@@ -217,10 +319,11 @@
       const title = cellText(block) || block.dataset.courseName || block.dataset.course;
       if (!title) continue;
       cells[row][day] = cells[row][day] ? `${cells[row][day]} / ${title}` : title;
+      records.push([lines[0][day + 1], rowLabels[row], title]);
       courseCount++;
     }
     for (let i = 0; i < rowLabels.length; i++) lines.push([rowLabels[i], ...cells[i]]);
-    return { csv: "\uFEFF" + lines.map(csvLine).join("\r\n"), courseCount };
+    return { csv: "\uFEFF" + lines.map(csvLine).join("\r\n"), rows: lines, records, courseCount };
   }
 
   function buildTimetableCsv(found) {
@@ -256,16 +359,16 @@
     }
     const name = (label || String(new Date().getFullYear())).replace(/[\\/:*?"<>|]/g, "_");
     const weekSuffix = week ? `_第${week}周` : "";
-    const blob = new Blob([result.csv], { type: "text/csv;charset=utf-8" });
+    const blob = createTimetableWorkbook(result);
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `课表_${name}${weekSuffix}.csv`;
+    anchor.download = `课表_${name}${weekSuffix}.xlsx`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    showToast(`课表已导出（${result.courseCount} 条课程记录），请查看浏览器下载文件`);
+    showToast(`课表已导出（${result.courseCount} 条课程记录，含“课表”和“课程明细”两张表）`);
   }
 
   function displayedWeek() {
@@ -332,7 +435,7 @@
       .map((week) => `<option value="${week}"${week === current ? " selected" : ""}>第 ${week} 周</option>`).join("");
     const dialog = host.createElement("div");
     dialog.id = "xaut-login-export-dialog";
-    dialog.innerHTML = `<style>#xaut-login-export-dialog{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(8,20,43,.48);font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}#xaut-login-export-dialog .card{width:min(92vw,360px);padding:22px;border-radius:14px;background:#fff;box-shadow:0 18px 48px rgba(8,20,43,.3);color:#172033}#xaut-login-export-dialog h3{margin:0 0 8px;font-size:18px}#xaut-login-export-dialog p{margin:0 0 16px;color:#52617a}#xaut-login-export-dialog select{width:100%;height:40px;padding:0 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px}#xaut-login-export-dialog .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}#xaut-login-export-dialog button{height:36px;padding:0 14px;border:0;border-radius:8px;cursor:pointer;font-weight:650}#xaut-login-export-dialog [data-action=cancel]{background:#eef2f7;color:#52617a}#xaut-login-export-dialog [data-action=export]{background:#0b7a61;color:#fff}</style><section class="card" role="dialog" aria-modal="true"><h3>导出课表</h3><p>选择周次后，脚本会先切换教务系统课表，再导出包含课程、教师和地点的 CSV。</p><select aria-label="选择导出周次">${options}</select><div class="actions"><button type="button" data-action="cancel">取消</button><button type="button" data-action="export">导出</button></div></section>`;
+    dialog.innerHTML = `<style>#xaut-login-export-dialog{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(8,20,43,.48);font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}#xaut-login-export-dialog .card{width:min(92vw,360px);padding:22px;border-radius:14px;background:#fff;box-shadow:0 18px 48px rgba(8,20,43,.3);color:#172033}#xaut-login-export-dialog h3{margin:0 0 8px;font-size:18px}#xaut-login-export-dialog p{margin:0 0 16px;color:#52617a}#xaut-login-export-dialog select{width:100%;height:40px;padding:0 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px}#xaut-login-export-dialog .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}#xaut-login-export-dialog button{height:36px;padding:0 14px;border:0;border-radius:8px;cursor:pointer;font-weight:650}#xaut-login-export-dialog [data-action=cancel]{background:#eef2f7;color:#52617a}#xaut-login-export-dialog [data-action=export]{background:#0b7a61;color:#fff}</style><section class="card" role="dialog" aria-modal="true"><h3>导出课表</h3><p>选择周次后，脚本会先切换教务系统课表，再导出格式化的 Excel 工作簿（含课表和课程明细）。</p><select aria-label="选择导出周次">${options}</select><div class="actions"><button type="button" data-action="cancel">取消</button><button type="button" data-action="export">导出</button></div></section>`;
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog || event.target.dataset.action === "cancel") dialog.remove();
       if (event.target.dataset.action === "export") {
@@ -361,7 +464,7 @@
       button.type = "button";
       button.id = "xaut-login-export-btn";
       button.textContent = "📅 导出课表";
-      button.title = "导出当前每周课表为 CSV（Excel 可直接打开）";
+      button.title = "导出当前每周课表为格式化 Excel 文件";
       button.style.cssText = "position:fixed;right:22px;bottom:22px;z-index:2147483646;border:0;border-radius:999px;padding:11px 15px;color:#fff;background:#0b7a61;box-shadow:0 10px 25px rgba(11,122,97,.3);cursor:pointer;font:600 13px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;transition:transform .15s,background .15s";
       button.addEventListener("mouseenter", () => { button.style.background = "#086a54"; });
       button.addEventListener("mouseleave", () => { button.style.background = "#0b7a61"; });
