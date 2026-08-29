@@ -82,30 +82,64 @@
   }
 
   // ================= 每周课表导出 =================
-  function findTimetableTable() {
-    const direct = document.getElementById("kbtable");
-    if (direct) return direct;
-    // 兼容多种课表布局：表内同时出现「周X」列和 节次/大节/小节 字样即可
-    for (const table of document.querySelectorAll("table")) {
-      const text = table.innerText || "";
-      if (/周[一二三四五六日天]/.test(text) && /(节次|大节|小节)/.test(text)) return table;
+  function allDocuments() {
+    const docs = [document];
+    try {
+      const top = window.top && window.top.document;
+      if (top && top !== document && !docs.includes(top)) docs.push(top);
+    } catch (_) {}
+    for (let i = 0; i < window.frames.length; i++) {
+      try {
+        const d = window.frames[i].document;
+        if (d && !docs.includes(d)) docs.push(d);
+      } catch (_) {}
+    }
+    return docs;
+  }
+
+  function hostDocument() {
+    try { return window.top.document; } catch (_) { return document; }
+  }
+
+  // 在普通 DOM + shadow DOM + 同源 iframe 中找课表：含「节次」和「周X/星期X」的最小元素
+  function findTimetableGrid() {
+    const dayPattern = /(周|星期)[一二三四五六日天]/;
+    for (const doc of allDocuments()) {
+      let best = null;
+      const walk = (root) => {
+        for (const el of root.querySelectorAll("*")) {
+          const t = el.textContent || "";
+          if (t.includes("节次") && dayPattern.test(t) && t.length > 50 && (!best || t.length < best.len)) {
+            best = { el, len: t.length };
+          }
+          if (el.shadowRoot) walk(el.shadowRoot);
+        }
+      };
+      walk(doc);
+      if (best) {
+        // 表格：直接用表格元素；UL/LI 日历网格：最小元素是表头 ul，取父容器
+        return { element: best.el.tagName === "TABLE" ? best.el : (best.el.parentElement || best.el) };
+      }
     }
     return null;
   }
 
-  function cellText(cell) {
-    const content = cell.querySelector(".kbcontent, .kbcontent1, .kbcontent2");
-    return ((content || cell).innerText || "").replace(/\s+/g, " ").trim();
+  function cellText(el) {
+    return (el.innerText || "").replace(/\s+/g, " ").trim();
   }
 
-  function buildTimetableCsv(table) {
+  function csvLine(row) {
+    return row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",");
+  }
+
+  // 经典正方 <table> 课表
+  function buildTableCsv(table) {
     const rows = [...table.querySelectorAll("tr")];
-    // 找到表头行：至少有 5 个「周X」列
     let headerIndex = -1;
     let dayCount = 0;
     for (let i = 0; i < rows.length && headerIndex < 0; i++) {
       const cells = [...rows[i].querySelectorAll("th, td")];
-      dayCount = cells.filter((c) => /^周[一二三四五六日天]/.test((c.innerText || "").trim())).length;
+      dayCount = cells.filter((c) => /^(周|星期)[一二三四五六日天]/.test((c.innerText || "").trim())).length;
       if (dayCount >= 5) headerIndex = i;
     }
     if (headerIndex < 0) return "";
@@ -121,27 +155,70 @@
       lines.push(row);
     }
     // 带 BOM 的 UTF-8，Excel 直接打开中文不乱码
-    return "\uFEFF" + lines.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    return "\uFEFF" + lines.map(csvLine).join("\r\n");
+  }
+
+  // 新版日历式 UL/LI 课表（如西理工：table-header + table-body + 绝对定位课程块）
+  function buildUlGridCsv(headerUl) {
+    const grid = headerUl.parentElement;
+    if (!grid) return "";
+    const headerLis = [...headerUl.querySelectorAll("li")];
+    const dayCount = headerLis.length - 1;
+    if (dayCount < 5) return "";
+    const lines = [["节次", ...headerLis.slice(1, 1 + dayCount).map(cellText)]];
+    const body = grid.querySelector(".table-body");
+    if (body) {
+      const rowLabels = [];
+      for (const child of body.children) {
+        if (child.tagName !== "UL") continue;
+        const lis = [...child.querySelectorAll("li")];
+        const label = lis.length ? cellText(lis[0]) : "";
+        if (!/(大节|小节|节)/.test(label)) continue; // 跳过「备注」等行
+        rowLabels.push(label);
+      }
+      const cells = rowLabels.map(() => Array(dayCount).fill(""));
+      for (const div of body.querySelectorAll("div.table-class.div-context")) {
+        const dayMatch = /\bday(\d)\b/.exec(div.className || "");
+        const topMatch = /top:\s*calc\(\s*\(\s*(\d+)\s*\*/.exec(div.style.cssText || "");
+        if (!dayMatch || !topMatch) continue;
+        const day = Number(dayMatch[1]);
+        const row = Number(topMatch[1]);
+        if (day < 0 || day >= dayCount || row < 0 || row >= rowLabels.length) continue;
+        const text = cellText(div);
+        if (text) cells[row][day] = cells[row][day] ? cells[row][day] + " / " + text : text;
+      }
+      for (let i = 0; i < rowLabels.length; i++) lines.push([rowLabels[i], ...cells[i]]);
+    }
+    return "\uFEFF" + lines.map(csvLine).join("\r\n");
+  }
+
+  function buildTimetableCsv(element) {
+    return element.tagName === "TABLE" ? buildTableCsv(element) : buildUlGridCsv(element);
   }
 
   function exportTimetable() {
-    const table = findTimetableTable();
-    if (!table) {
+    const found = findTimetableGrid();
+    if (!found) {
       showToast("未找到课表，请先打开教务系统的课表页面");
       return;
     }
-    const csv = buildTimetableCsv(table);
-    if (csv.replace(/\uFEFF/, "").trim().length < 20) {
+    const csv = buildTimetableCsv(found.element);
+    if (!csv || csv.replace(/\uFEFF/, "").trim().length < 20) {
       showToast("课表内容为空，请先在课表页面选择学年学期");
       return;
     }
-    const xnm = document.getElementById("xnm");
-    const xqm = document.getElementById("xqm");
-    const semester = [xnm && xnm.value, xqm && xqm.selectedOptions[0] && xqm.selectedOptions[0].textContent.trim()]
-      .filter(Boolean).join("-");
-    // 部分部署没有 xnm/xqm 下拉（本页是日期选择器），回退取页面可见日期
-    const visibleDate = semester ? "" : ((document.body.innerText || "").match(/20\d{2}-\d{2}-\d{2}/) || [])[0];
-    const name = (semester || visibleDate || String(new Date().getFullYear())).replace(/[\\/:*?"<>|]/g, "_");
+    // 文件名：优先取页面可见日期/学期（可能在 iframe 或顶层页面）
+    let label = "";
+    for (const doc of [document, hostDocument()]) {
+      try {
+        const t = doc.body ? doc.body.innerText : "";
+        const date = t.match(/20\d{2}-\d{2}-\d{2}/);
+        if (date) { label = date[0]; break; }
+        const sem = t.match(/20\d{2}-\d{2,4}-\d/);
+        if (sem) { label = sem[0]; break; }
+      } catch (_) {}
+    }
+    const name = (label || String(new Date().getFullYear())).replace(/[\\/:*?"<>|]/g, "_");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -155,24 +232,27 @@
   }
 
   function initTimetableExport() {
-    let attempts = 0;
-    const timer = setInterval(() => {
-      if (findTimetableTable()) {
-        clearInterval(timer);
-        const button = document.createElement("button");
-        button.type = "button";
-        button.id = "xaut-login-export-btn";
-        button.textContent = "📅 导出课表";
-        button.title = "导出当前每周课表为 CSV（Excel 可直接打开）";
-        button.style.cssText = "position:fixed;right:22px;bottom:22px;z-index:2147483646;border:0;border-radius:999px;padding:11px 15px;color:#fff;background:#0b7a61;box-shadow:0 10px 25px rgba(11,122,97,.3);cursor:pointer;font:600 13px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;transition:transform .15s,background .15s";
-        button.addEventListener("mouseenter", () => { button.style.background = "#086a54"; });
-        button.addEventListener("mouseleave", () => { button.style.background = "#0b7a61"; });
-        button.addEventListener("click", exportTimetable);
-        document.body.appendChild(button);
-      } else if (++attempts > 20) {
-        clearInterval(timer); // 约 10 秒内未出现课表则放弃（非课表页面）
+    // 持续监听：课表可能在 iframe/SPA 中延迟加载，永不放弃；按钮挂在顶层页面
+    setInterval(() => {
+      const host = hostDocument();
+      const existing = host.getElementById("xaut-login-export-btn");
+      const found = findTimetableGrid();
+      if (existing) {
+        existing.style.display = found ? "" : "none";
+        return;
       }
-    }, 500);
+      if (!found) return;
+      const button = host.createElement("button");
+      button.type = "button";
+      button.id = "xaut-login-export-btn";
+      button.textContent = "📅 导出课表";
+      button.title = "导出当前每周课表为 CSV（Excel 可直接打开）";
+      button.style.cssText = "position:fixed;right:22px;bottom:22px;z-index:2147483646;border:0;border-radius:999px;padding:11px 15px;color:#fff;background:#0b7a61;box-shadow:0 10px 25px rgba(11,122,97,.3);cursor:pointer;font:600 13px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;transition:transform .15s,background .15s";
+      button.addEventListener("mouseenter", () => { button.style.background = "#086a54"; });
+      button.addEventListener("mouseleave", () => { button.style.background = "#0b7a61"; });
+      button.addEventListener("click", exportTimetable);
+      host.body.appendChild(button);
+    }, 1000);
   }
 
   // 每个页面都执行：云更新检查 + 课表导出按钮

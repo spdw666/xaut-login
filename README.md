@@ -4,7 +4,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0f6cbd?style=flat-square)
 ![Runtime](https://img.shields.io/badge/runtime-local%20only-0b8f66?style=flat-square)
-![Version](https://img.shields.io/badge/version-0.4.1-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.5-7c3aed?style=flat-square)
 
 ## 功能
 
