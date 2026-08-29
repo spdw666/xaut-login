@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         西理工教务登录助手
 // @namespace    xaut-local
-// @version      0.4.1
+// @version      0.5
 // @description  本地 OCR 识别验证码 + 云更新检查 + 一键导出每周课表
 // @match        https://jwgl.xaut.edu.cn/*
 // @grant        GM_xmlhttpRequest
