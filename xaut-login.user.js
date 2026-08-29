@@ -1,13 +1,17 @@
 // ==UserScript==
 // @name         西理工教务登录助手
 // @namespace    xaut-local
-// @version      0.2
-// @description  本地 OCR 识别验证码，并提供简洁的账号设置界面
+// @version      0.3
+// @description  本地 OCR 识别验证码 + 云更新检查 + 一键导出每周课表
 // @match        https://jwgl.xaut.edu.cn/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @connect      127.0.0.1
+// @connect      cdn.jsdelivr.net
+// @connect      raw.githubusercontent.com
+// @updateURL    https://cdn.jsdelivr.net/gh/spdw666/xaut-login@main/xaut-login.user.js
+// @downloadURL  https://cdn.jsdelivr.net/gh/spdw666/xaut-login@main/xaut-login.user.js
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -20,6 +24,147 @@
   const accountInput = document.getElementById("userAccount");
   const passwordInput = document.getElementById("userPassword");
   const captchaImage = document.getElementById("SafeCodeImg");
+
+  // ================= 云更新（每天自动检查一次） =================
+  const UPDATE_URL = "https://cdn.jsdelivr.net/gh/spdw666/xaut-login@main/xaut-login.user.js";
+  const UPDATE_FALLBACK_URL = "https://raw.githubusercontent.com/spdw666/xaut-login/main/xaut-login.user.js";
+  const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000;
+
+  function compareVersions(a, b) {
+    const pa = String(a).split(".").map(Number);
+    const pb = String(b).split(".").map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const diff = (pa[i] || 0) - (pb[i] || 0);
+      if (diff) return diff > 0 ? 1 : -1;
+    }
+    return 0;
+  }
+
+  function showToast(message, onClick) {
+    const toast = document.createElement("div");
+    toast.id = "xaut-login-toast";
+    toast.innerHTML = `
+      <style>
+        #xaut-login-toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); z-index: 2147483647; max-width: min(92vw, 480px); padding: 11px 18px; border-radius: 10px; color: #fff; background: rgba(15, 76, 129, .94); box-shadow: 0 12px 32px rgba(8, 20, 43, .3); font: 600 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: center; cursor: ${onClick ? "pointer" : "default"}; }
+        #xaut-login-toast:hover { background: rgba(15, 76, 129, 1); }
+      </style>
+      <span>${message}</span>`;
+    if (onClick) toast.addEventListener("click", onClick);
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 20000);
+  }
+
+  function checkForUpdate() {
+    const lastCheckedAt = GM_getValue("xautUpdateCheckedAt", 0);
+    if (Date.now() - lastCheckedAt < UPDATE_CHECK_INTERVAL) return;
+    GM_setValue("xautUpdateCheckedAt", Date.now());
+
+    const probe = (url, fallbackUrl) => {
+      GM_xmlhttpRequest({
+        method: "GET",
+        url,
+        timeout: 10000,
+        onload(response) {
+          const match = /@version\s+([0-9.]+)/.exec(response.responseText || "");
+          if (match && compareVersions(match[1], GM_info.script.version) > 0) {
+            showToast(
+              `发现新版本 v${match[1]}（当前 v${GM_info.script.version}），点击更新`,
+              () => window.open(url, "_blank")
+            );
+          }
+        },
+        onerror: () => { if (fallbackUrl) probe(fallbackUrl, null); },
+        ontimeout: () => { if (fallbackUrl) probe(fallbackUrl, null); },
+      });
+    };
+    probe(UPDATE_URL, UPDATE_FALLBACK_URL);
+  }
+
+  // ================= 每周课表导出 =================
+  function findTimetableTable() {
+    const direct = document.getElementById("kbtable");
+    if (direct) return direct;
+    for (const table of document.querySelectorAll("table")) {
+      const firstRow = table.querySelector("tr");
+      if (firstRow && /节次/.test(firstRow.textContent) && /星期一/.test(firstRow.textContent)) return table;
+    }
+    return null;
+  }
+
+  function cellText(cell) {
+    const content = cell.querySelector(".kbcontent, .kbcontent1, .kbcontent2");
+    return ((content || cell).innerText || "").replace(/\s+/g, " ").trim();
+  }
+
+  function buildTimetableCsv(table) {
+    const rows = [...table.querySelectorAll("tr")];
+    const headerCells = [...rows[0].querySelectorAll("th, td")].map((c) => (c.innerText || "").trim());
+    const dayCount = headerCells.length - 1;
+    const lines = [[headerCells[0] || "节次", ...headerCells.slice(1, 1 + dayCount)]];
+    for (let i = 1; i < rows.length; i++) {
+      const cells = [...rows[i].querySelectorAll("th, td")];
+      const label = (cells[0].innerText || "").split("\n")[0].trim();
+      if (!/^第?\s*\d+(\s*-\s*\d+)?\s*节/.test(label)) continue; // 跳过午休等非课节行
+      const row = [label];
+      for (let d = 1; d <= dayCount; d++) row.push(cells[d] ? cellText(cells[d]) : "");
+      lines.push(row);
+    }
+    // 带 BOM 的 UTF-8，Excel 直接打开中文不乱码
+    return "\uFEFF" + lines.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+  }
+
+  function exportTimetable() {
+    const table = findTimetableTable();
+    if (!table) {
+      showToast("未找到课表，请先打开教务系统的课表页面");
+      return;
+    }
+    const csv = buildTimetableCsv(table);
+    if (csv.replace(/\uFEFF/, "").trim().length < 20) {
+      showToast("课表内容为空，请先在课表页面选择学年学期");
+      return;
+    }
+    const xnm = document.getElementById("xnm");
+    const xqm = document.getElementById("xqm");
+    const semester = [xnm && xnm.value, xqm && xqm.selectedOptions[0] && xqm.selectedOptions[0].textContent.trim()]
+      .filter(Boolean).join("-");
+    const name = (semester || String(new Date().getFullYear())).replace(/[\\/:*?"<>|]/g, "_");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `课表_${name}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    showToast("课表已导出，请查看浏览器下载文件（可用 Excel 打开）");
+  }
+
+  function initTimetableExport() {
+    let attempts = 0;
+    const timer = setInterval(() => {
+      if (findTimetableTable()) {
+        clearInterval(timer);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.id = "xaut-login-export-btn";
+        button.textContent = "📅 导出课表";
+        button.title = "导出当前每周课表为 CSV（Excel 可直接打开）";
+        button.style.cssText = "position:fixed;right:22px;bottom:22px;z-index:2147483646;border:0;border-radius:999px;padding:11px 15px;color:#fff;background:#0b7a61;box-shadow:0 10px 25px rgba(11,122,97,.3);cursor:pointer;font:600 13px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;transition:transform .15s,background .15s";
+        button.addEventListener("mouseenter", () => { button.style.background = "#086a54"; });
+        button.addEventListener("mouseleave", () => { button.style.background = "#0b7a61"; });
+        button.addEventListener("click", exportTimetable);
+        document.body.appendChild(button);
+      } else if (++attempts > 20) {
+        clearInterval(timer); // 约 10 秒内未出现课表则放弃（非课表页面）
+      }
+    }, 500);
+  }
+
+  // 每个页面都执行：云更新检查 + 课表导出按钮
+  checkForUpdate();
+  initTimetableExport();
 
   if (!input || !captchaImage) return;
 

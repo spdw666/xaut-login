@@ -1,10 +1,16 @@
 # 西理工教务系统登录助手
 
-> 本地运行的验证码识别服务 + Tampermonkey 脚本，帮助用户更快填写教务系统登录信息。
+> 本地运行的验证码识别服务 + Tampermonkey 脚本：自动填写登录信息、每天自动检查云端更新、一键导出每周课表。
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0f6cbd?style=flat-square)
 ![Runtime](https://img.shields.io/badge/runtime-local%20only-0b8f66?style=flat-square)
-![Version](https://img.shields.io/badge/version-0.2-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.3-7c3aed?style=flat-square)
+
+## 功能
+
+- **免验证码登录**：自动识别验证码，并填入已保存的账号密码
+- **云更新**：脚本每天自动检查一次 GitHub 最新版本，有新版本时右下角弹提示，点击即可更新（Tampermonkey 也会按 `@updateURL` 自动检测）
+- **导出每周课表**：在教务系统“个人课表”页面右下角点击“📅 导出课表”，下载 CSV 文件，Excel 可直接打开
 
 ## 开始使用
 
@@ -44,6 +50,10 @@ requirements.txt        Python 依赖范围
 **如何修改账号或密码？** 点击登录页右下角的“登录助手”，保存新的账号信息即可。
 
 **验证码没有自动填写？** 先打开 `http://127.0.0.1:8765/health` 检查服务；随后确认 Tampermonkey 脚本已启用。
+
+**如何导出每周课表？** 登录教务系统后打开“个人课表”页面，等课表加载完成后，右下角会出现绿色“📅 导出课表”按钮，点击即可下载 CSV 文件（带 UTF-8 BOM，Excel 直接打开中文不乱码）。
+
+**脚本怎么更新？** 脚本每天自动检查一次新版本；有新版本时右下角会弹出提示，点击即可安装。也可以在 Tampermonkey 管理面板手动“检查更新”。更新源：`https://cdn.jsdelivr.net/gh/spdw666/xaut-login@main/xaut-login.user.js`（GitHub 推送后约数分钟生效）。
 
 **源码放在别的磁盘可以吗？** 可以。所有源码启动脚本都使用自身所在目录，不再依赖固定的 `D:` 路径。
 
