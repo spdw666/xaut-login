@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         西理工教务登录助手
 // @namespace    xaut-local
-// @version      0.7.0
+// @version      0.7.1
 // @description  本地 OCR 识别验证码 + 云更新检查 + 一键导出每周课表
 // @match        https://jwgl.xaut.edu.cn/*
 // @grant        GM_xmlhttpRequest
@@ -246,6 +246,14 @@
     ]);
   }
 
+  function createPrintableTimetable(result, title) {
+    const rows = result.rows || [];
+    const header = rows[0] || [];
+    const body = rows.slice(1).map((row) => `<tr>${row.map((value) => `<td>${xmlEscape(value).replace(/\n/g, "<br>")}</td>`).join("")}</tr>`).join("");
+    const detailRows = (result.records || []).map((row) => `<tr>${row.map((value) => `<td>${xmlEscape(value).replace(/\n/g, "<br>")}</td>`).join("")}</tr>`).join("");
+    return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${xmlEscape(title)}</title><style>body{margin:32px;background:#f5f7f7;color:#19242b;font:15px/1.55 "Microsoft YaHei",sans-serif}h1{margin:0 0 6px;font-size:26px}p{margin:0 0 22px;color:#607078}h2{margin:30px 0 10px;font-size:19px}table{width:100%;border-collapse:collapse;table-layout:fixed;background:#fff;box-shadow:0 2px 12px #0b7a6114}th,td{border:1px solid #d9e0e2;padding:10px;vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere}th{background:#0b7a61;color:#fff;text-align:center;font-weight:700}td:first-child{width:130px;background:#f0f7f5;font-weight:700}.details{table-layout:auto}.details td:nth-child(1){width:120px}.details td:nth-child(2){width:130px}@media print{body{margin:10mm;background:#fff}h1{font-size:20px}th,td{padding:7px;font-size:11px;box-shadow:none}}</style></head><body><h1>${xmlEscape(title)}</h1><p>打印版课表：浏览器中打开后可直接打印，或在打印窗口选择“另存为 PDF”。</p><h2>周课表</h2><table><thead><tr>${header.map((value) => `<th>${xmlEscape(value)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table><h2>课程明细</h2><table class="details"><thead><tr><th>星期</th><th>节次</th><th>课程信息</th></tr></thead><tbody>${detailRows}</tbody></table></body></html>`;
+  }
+
   // 经典正方 <table> 课表
   function buildTableCsv(table) {
     const rows = [...table.querySelectorAll("tr")];
@@ -298,6 +306,22 @@
     if (!rowLabels.length) return { csv: "", rows: [], records: [], courseCount: 0 };
 
     const cells = rowLabels.map(() => Array(dayCount).fill(""));
+    const dayHeaders = headerLis.slice(1, 1 + dayCount);
+    const indexByRenderedPosition = (block, references, axis) => {
+      const blockRect = block.getBoundingClientRect();
+      if (!(blockRect.width && blockRect.height)) return -1;
+      const center = axis === "x" ? blockRect.left + blockRect.width / 2 : blockRect.top + blockRect.height / 2;
+      const rectangles = references.map((element) => element.getBoundingClientRect());
+      if (rectangles.some((rect) => !(rect.width && rect.height))) return -1;
+      let best = -1;
+      let distance = Infinity;
+      rectangles.forEach((rect, index) => {
+        const referenceCenter = axis === "x" ? rect.left + rect.width / 2 : rect.top + rect.height / 2;
+        const currentDistance = Math.abs(center - referenceCenter);
+        if (currentDistance < distance) { best = index; distance = currentDistance; }
+      });
+      return best;
+    };
     // 优先取页面标记为 div-context 的叶子课程块。若页面版本没有该类名，才回退到不含嵌套 table-class 的叶子节点。
     const markedBlocks = [...body.querySelectorAll(".table-class.div-context, [data-course-name], [data-course]")];
     const courseBlocks = markedBlocks.length ? markedBlocks : [...body.querySelectorAll(".table-class")]
@@ -307,12 +331,15 @@
     for (const block of courseBlocks) {
       const className = String(block.className || "");
       const dayMatch = /(?:^|\s)day(\d+)(?:\s|$)/.exec(className);
+      const renderedDay = indexByRenderedPosition(block, dayHeaders, "x");
+      const renderedRow = indexByRenderedPosition(block, rowElements, "y");
       const dayValue = block.dataset.day || block.dataset.column || (dayMatch && dayMatch[1]);
-      // getAttribute 保留页面写入的 "calc((第几行 * …))" 原始公式；style.top 在部分浏览器会被规范化为百分比而丢失行号。
-      const topText = block.dataset.row || block.dataset.index || block.getAttribute("style") || block.style.top || block.style.cssText;
-      const topMatch = /(?:^|\D)(\d+)(?:\D|$)/.exec(String(topText));
-      const day = Number(dayValue);
-      const row = topMatch ? Number(topMatch[1]) : -1;
+      // 坐标不可用时才回退。仅截取 top: 的值，避免把 left: 中的星期序号误当节次序号。
+      const styleText = block.getAttribute("style") || block.style.cssText || "";
+      const topText = block.dataset.row || block.dataset.index || ((/(?:^|;)\s*top\s*:\s*([^;]+)/i.exec(styleText) || [])[1]) || "";
+      const topMatch = /calc\(\s*\(\s*(\d+)\s*\*/.exec(String(topText));
+      const day = renderedDay >= 0 ? renderedDay : Number(dayValue);
+      const row = renderedRow >= 0 ? renderedRow : (topMatch ? Number(topMatch[1]) : -1);
       if (!Number.isInteger(day) || day < 0 || day >= dayCount || row < 0 || row >= rowLabels.length) continue;
 
       // 课程块通常还包含教师和地点；保留完整文字，避免只导出课程名或丢失课程名。
@@ -335,7 +362,7 @@
     return cellText(grid).slice(0, 4000);
   }
 
-  function exportTimetable(week) {
+  function exportTimetable(week, format = "xlsx") {
     const found = findTimetableGrid();
     if (!found) {
       showToast("未找到课表，请先打开教务系统的课表页面");
@@ -359,16 +386,17 @@
     }
     const name = (label || String(new Date().getFullYear())).replace(/[\\/:*?"<>|]/g, "_");
     const weekSuffix = week ? `_第${week}周` : "";
-    const blob = createTimetableWorkbook(result);
+    const printable = format === "html";
+    const blob = printable ? new Blob([createPrintableTimetable(result, `第 ${week || "当前"} 周课表`)], { type: "text/html;charset=utf-8" }) : createTimetableWorkbook(result);
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `课表_${name}${weekSuffix}.xlsx`;
+    anchor.download = `课表_${name}${weekSuffix}.${printable ? "html" : "xlsx"}`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    showToast(`课表已导出（${result.courseCount} 条课程记录，含“课表”和“课程明细”两张表）`);
+    showToast(printable ? `打印版课表已导出（可用浏览器打开后打印或另存为 PDF）` : `Excel 课表已导出（含“课表”和“课程明细”两张表）`);
   }
 
   function displayedWeek() {
@@ -405,11 +433,11 @@
     return false;
   }
 
-  function exportRequestedWeek(target) {
+  function exportRequestedWeek(target, format) {
     const found = findTimetableGrid();
     if (!found) return showToast("未找到课表，请先打开教务系统的个人课表页面");
     const current = displayedWeek();
-    if (!target || target === current) return exportTimetable(target || current);
+    if (!target || target === current) return exportTimetable(target || current, format);
     const before = timetableSignature(found);
     const switched = weekSelect(target) || (current && weekStep(target, current));
     if (!switched) {
@@ -421,7 +449,7 @@
       const refreshed = findTimetableGrid();
       if (refreshed && (timetableSignature(refreshed) !== before || ++attempts >= 20)) {
         clearInterval(waitForRefresh);
-        exportTimetable(target);
+        exportTimetable(target, format);
       }
     }, 300);
   }
@@ -435,13 +463,14 @@
       .map((week) => `<option value="${week}"${week === current ? " selected" : ""}>第 ${week} 周</option>`).join("");
     const dialog = host.createElement("div");
     dialog.id = "xaut-login-export-dialog";
-    dialog.innerHTML = `<style>#xaut-login-export-dialog{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(8,20,43,.48);font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}#xaut-login-export-dialog .card{width:min(92vw,360px);padding:22px;border-radius:14px;background:#fff;box-shadow:0 18px 48px rgba(8,20,43,.3);color:#172033}#xaut-login-export-dialog h3{margin:0 0 8px;font-size:18px}#xaut-login-export-dialog p{margin:0 0 16px;color:#52617a}#xaut-login-export-dialog select{width:100%;height:40px;padding:0 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px}#xaut-login-export-dialog .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}#xaut-login-export-dialog button{height:36px;padding:0 14px;border:0;border-radius:8px;cursor:pointer;font-weight:650}#xaut-login-export-dialog [data-action=cancel]{background:#eef2f7;color:#52617a}#xaut-login-export-dialog [data-action=export]{background:#0b7a61;color:#fff}</style><section class="card" role="dialog" aria-modal="true"><h3>导出课表</h3><p>选择周次后，脚本会先切换教务系统课表，再导出格式化的 Excel 工作簿（含课表和课程明细）。</p><select aria-label="选择导出周次">${options}</select><div class="actions"><button type="button" data-action="cancel">取消</button><button type="button" data-action="export">导出</button></div></section>`;
+    dialog.innerHTML = `<style>#xaut-login-export-dialog{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(8,20,43,.48);font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}#xaut-login-export-dialog .card{width:min(92vw,360px);padding:22px;border-radius:14px;background:#fff;box-shadow:0 18px 48px rgba(8,20,43,.3);color:#172033}#xaut-login-export-dialog h3{margin:0 0 8px;font-size:18px}#xaut-login-export-dialog p{margin:0 0 16px;color:#52617a}#xaut-login-export-dialog label{display:block;margin:12px 0 6px;font-weight:650}#xaut-login-export-dialog select{width:100%;height:40px;padding:0 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px}#xaut-login-export-dialog .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}#xaut-login-export-dialog button{height:36px;padding:0 14px;border:0;border-radius:8px;cursor:pointer;font-weight:650}#xaut-login-export-dialog [data-action=cancel]{background:#eef2f7;color:#52617a}#xaut-login-export-dialog [data-action=export]{background:#0b7a61;color:#fff}</style><section class="card" role="dialog" aria-modal="true"><h3>导出课表</h3><p>可导出 Excel 工作簿，或导出可直接打印、另存为 PDF 的网页版课表。</p><label>选择周次</label><select data-field="week" aria-label="选择导出周次">${options}</select><label>导出格式</label><select data-field="format" aria-label="选择导出格式"><option value="xlsx">Excel（课表 + 课程明细）</option><option value="html">打印网页版（可另存为 PDF）</option></select><div class="actions"><button type="button" data-action="cancel">取消</button><button type="button" data-action="export">导出</button></div></section>`;
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog || event.target.dataset.action === "cancel") dialog.remove();
       if (event.target.dataset.action === "export") {
-        const week = Number(dialog.querySelector("select").value);
+        const week = Number(dialog.querySelector('[data-field="week"]').value);
+        const format = dialog.querySelector('[data-field="format"]').value;
         dialog.remove();
-        exportRequestedWeek(week);
+        exportRequestedWeek(week, format);
       }
     });
     host.body.appendChild(dialog);

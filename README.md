@@ -4,13 +4,13 @@
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0f6cbd?style=flat-square)
 ![Runtime](https://img.shields.io/badge/runtime-local%20only-0b8f66?style=flat-square)
-![Version](https://img.shields.io/badge/version-0.7.0-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.7.1-7c3aed?style=flat-square)
 
 ## 功能
 
 - **免验证码登录**：自动识别验证码，并填入已保存的账号密码
 - **云更新**：脚本每天自动检查一次 GitHub 最新版本，有新版本时右下角弹提示，点击即可更新（Tampermonkey 也会按 `@updateURL` 自动检测）
-- **按周导出课表**：在教务系统“个人课表”页面右下角点击“📅 导出课表”，选择第几周后下载格式化 Excel 工作簿；课程、教师和地点会一并保留，并提供“课程明细”工作表
+- **按周导出课表**：在教务系统“个人课表”页面右下角点击“📅 导出课表”，可选择格式化 Excel 工作簿，或可直接打印/另存为 PDF 的网页版课表
 
 ## 开始使用
 
