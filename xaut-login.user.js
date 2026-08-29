@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         西理工教务登录助手
 // @namespace    xaut-local
-// @version      0.7.1
+// @version      0.7.2
 // @description  本地 OCR 识别验证码 + 云更新检查 + 一键导出每周课表
 // @match        https://jwgl.xaut.edu.cn/*
 // @grant        GM_xmlhttpRequest
@@ -254,6 +254,84 @@
     return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${xmlEscape(title)}</title><style>body{margin:32px;background:#f5f7f7;color:#19242b;font:15px/1.55 "Microsoft YaHei",sans-serif}h1{margin:0 0 6px;font-size:26px}p{margin:0 0 22px;color:#607078}h2{margin:30px 0 10px;font-size:19px}table{width:100%;border-collapse:collapse;table-layout:fixed;background:#fff;box-shadow:0 2px 12px #0b7a6114}th,td{border:1px solid #d9e0e2;padding:10px;vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere}th{background:#0b7a61;color:#fff;text-align:center;font-weight:700}td:first-child{width:130px;background:#f0f7f5;font-weight:700}.details{table-layout:auto}.details td:nth-child(1){width:120px}.details td:nth-child(2){width:130px}@media print{body{margin:10mm;background:#fff}h1{font-size:20px}th,td{padding:7px;font-size:11px;box-shadow:none}}</style></head><body><h1>${xmlEscape(title)}</h1><p>打印版课表：浏览器中打开后可直接打印，或在打印窗口选择“另存为 PDF”。</p><h2>周课表</h2><table><thead><tr>${header.map((value) => `<th>${xmlEscape(value)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table><h2>课程明细</h2><table class="details"><thead><tr><th>星期</th><th>节次</th><th>课程信息</th></tr></thead><tbody>${detailRows}</tbody></table></body></html>`;
   }
 
+  function drawWrappedCanvasText(context, text, x, y, width, lineHeight, maxLines) {
+    const source = String(text || "").replace(/\s+/g, " ").trim();
+    const lines = [];
+    let line = "";
+    for (const character of source) {
+      if (context.measureText(line + character).width > width && line) {
+        lines.push(line);
+        line = character;
+      } else line += character;
+    }
+    if (line) lines.push(line);
+    lines.slice(0, maxLines).forEach((value, index) => context.fillText(value, x, y + index * lineHeight));
+    if (lines.length > maxLines) context.fillText("…", x + Math.max(0, width - context.measureText("…").width), y + (maxLines - 1) * lineHeight);
+  }
+
+  function pdfFromJpeg(jpeg, imageWidth, imageHeight) {
+    const encoder = new TextEncoder();
+    const parts = [];
+    const offsets = [];
+    let offset = 0;
+    const addText = (text) => { const bytes = encoder.encode(text); parts.push(bytes); offset += bytes.length; };
+    const addBytes = (bytes) => { parts.push(bytes); offset += bytes.length; };
+    const object = (number, content) => { offsets[number] = offset; addText(`${number} 0 obj\n${content}\nendobj\n`); };
+    const content = "q\n842 0 0 595 0 0 cm\n/Im0 Do\nQ\n";
+    addText("%PDF-1.4\n");
+    object(1, "<< /Type /Catalog /Pages 2 0 R >>");
+    object(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    object(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>");
+    offsets[4] = offset;
+    addText(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`);
+    addBytes(jpeg);
+    addText("\nendstream\nendobj\n");
+    object(5, `<< /Length ${encoder.encode(content).length} >>\nstream\n${content}endstream`);
+    const xref = offset;
+    addText("xref\n0 6\n0000000000 65535 f \n");
+    for (let i = 1; i <= 5; i++) addText(`${String(offsets[i]).padStart(10, "0")} 00000 n \n`);
+    addText(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+    return new Blob(parts, { type: "application/pdf" });
+  }
+
+  async function createTimetablePdf(result, title) {
+    const rows = result.rows || [];
+    const canvas = hostDocument().createElement("canvas");
+    canvas.width = 1684;
+    canvas.height = 1191;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#15332d";
+    context.font = "700 34px Microsoft YaHei, sans-serif";
+    context.fillText(title, 56, 64);
+    context.fillStyle = "#68777b";
+    context.font = "20px Microsoft YaHei, sans-serif";
+    context.fillText("由西理工教务登录助手导出", 56, 98);
+    const top = 130;
+    const headerHeight = 64;
+    const firstColumn = 176;
+    const columnWidth = (canvas.width - 56 - firstColumn) / Math.max(1, (rows[0] || []).length - 1);
+    const rowHeight = (canvas.height - top - headerHeight - 54) / Math.max(1, rows.length - 1);
+    const drawCell = (x, y, width, height, value, header) => {
+      context.fillStyle = header ? "#0b7a61" : (x === 56 ? "#f0f7f5" : "#ffffff");
+      context.fillRect(x, y, width, height);
+      context.strokeStyle = "#d3dcde";
+      context.lineWidth = 1;
+      context.strokeRect(x, y, width, height);
+      context.fillStyle = header ? "#ffffff" : "#1c2c30";
+      context.font = header ? "700 20px Microsoft YaHei, sans-serif" : (x === 56 ? "700 18px Microsoft YaHei, sans-serif" : "18px Microsoft YaHei, sans-serif");
+      context.textBaseline = "top";
+      const padding = 12;
+      drawWrappedCanvasText(context, value, x + padding, y + padding, width - padding * 2, 25, Math.max(2, Math.floor((height - padding * 2) / 25)));
+    };
+    (rows[0] || []).forEach((value, index) => drawCell(index ? 56 + firstColumn + (index - 1) * columnWidth : 56, top, index ? columnWidth : firstColumn, headerHeight, value, true));
+    rows.slice(1).forEach((row, rowIndex) => row.forEach((value, columnIndex) => drawCell(columnIndex ? 56 + firstColumn + (columnIndex - 1) * columnWidth : 56, top + headerHeight + rowIndex * rowHeight, columnIndex ? columnWidth : firstColumn, rowHeight, value, false)));
+    const jpeg = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.94));
+    if (!jpeg) throw new Error("无法生成课表 PDF 图片");
+    return pdfFromJpeg(new Uint8Array(await jpeg.arrayBuffer()), canvas.width, canvas.height);
+  }
+
   // 经典正方 <table> 课表
   function buildTableCsv(table) {
     const rows = [...table.querySelectorAll("tr")];
@@ -362,7 +440,7 @@
     return cellText(grid).slice(0, 4000);
   }
 
-  function exportTimetable(week, format = "xlsx") {
+  async function exportTimetable(week, format = "xlsx") {
     const found = findTimetableGrid();
     if (!found) {
       showToast("未找到课表，请先打开教务系统的课表页面");
@@ -387,16 +465,18 @@
     const name = (label || String(new Date().getFullYear())).replace(/[\\/:*?"<>|]/g, "_");
     const weekSuffix = week ? `_第${week}周` : "";
     const printable = format === "html";
-    const blob = printable ? new Blob([createPrintableTimetable(result, `第 ${week || "当前"} 周课表`)], { type: "text/html;charset=utf-8" }) : createTimetableWorkbook(result);
+    const pdf = format === "pdf";
+    const title = `第 ${week || "当前"} 周课表`;
+    const blob = pdf ? await createTimetablePdf(result, title) : (printable ? new Blob([createPrintableTimetable(result, title)], { type: "text/html;charset=utf-8" }) : createTimetableWorkbook(result));
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `课表_${name}${weekSuffix}.${printable ? "html" : "xlsx"}`;
+    anchor.download = `课表_${name}${weekSuffix}.${pdf ? "pdf" : (printable ? "html" : "xlsx")}`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    showToast(printable ? `打印版课表已导出（可用浏览器打开后打印或另存为 PDF）` : `Excel 课表已导出（含“课表”和“课程明细”两张表）`);
+    showToast(pdf ? "PDF 课表已导出" : (printable ? "打印版课表已导出（可用浏览器打开后打印或另存为 PDF）" : "Excel 课表已导出（含“课表”和“课程明细”两张表）"));
   }
 
   function displayedWeek() {
@@ -463,7 +543,7 @@
       .map((week) => `<option value="${week}"${week === current ? " selected" : ""}>第 ${week} 周</option>`).join("");
     const dialog = host.createElement("div");
     dialog.id = "xaut-login-export-dialog";
-    dialog.innerHTML = `<style>#xaut-login-export-dialog{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(8,20,43,.48);font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}#xaut-login-export-dialog .card{width:min(92vw,360px);padding:22px;border-radius:14px;background:#fff;box-shadow:0 18px 48px rgba(8,20,43,.3);color:#172033}#xaut-login-export-dialog h3{margin:0 0 8px;font-size:18px}#xaut-login-export-dialog p{margin:0 0 16px;color:#52617a}#xaut-login-export-dialog label{display:block;margin:12px 0 6px;font-weight:650}#xaut-login-export-dialog select{width:100%;height:40px;padding:0 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px}#xaut-login-export-dialog .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}#xaut-login-export-dialog button{height:36px;padding:0 14px;border:0;border-radius:8px;cursor:pointer;font-weight:650}#xaut-login-export-dialog [data-action=cancel]{background:#eef2f7;color:#52617a}#xaut-login-export-dialog [data-action=export]{background:#0b7a61;color:#fff}</style><section class="card" role="dialog" aria-modal="true"><h3>导出课表</h3><p>可导出 Excel 工作簿，或导出可直接打印、另存为 PDF 的网页版课表。</p><label>选择周次</label><select data-field="week" aria-label="选择导出周次">${options}</select><label>导出格式</label><select data-field="format" aria-label="选择导出格式"><option value="xlsx">Excel（课表 + 课程明细）</option><option value="html">打印网页版（可另存为 PDF）</option></select><div class="actions"><button type="button" data-action="cancel">取消</button><button type="button" data-action="export">导出</button></div></section>`;
+    dialog.innerHTML = `<style>#xaut-login-export-dialog{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(8,20,43,.48);font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}#xaut-login-export-dialog .card{width:min(92vw,360px);padding:22px;border-radius:14px;background:#fff;box-shadow:0 18px 48px rgba(8,20,43,.3);color:#172033}#xaut-login-export-dialog h3{margin:0 0 8px;font-size:18px}#xaut-login-export-dialog p{margin:0 0 16px;color:#52617a}#xaut-login-export-dialog label{display:block;margin:12px 0 6px;font-weight:650}#xaut-login-export-dialog select{width:100%;height:40px;padding:0 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px}#xaut-login-export-dialog .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}#xaut-login-export-dialog button{height:36px;padding:0 14px;border:0;border-radius:8px;cursor:pointer;font-weight:650}#xaut-login-export-dialog [data-action=cancel]{background:#eef2f7;color:#52617a}#xaut-login-export-dialog [data-action=export]{background:#0b7a61;color:#fff}</style><section class="card" role="dialog" aria-modal="true"><h3>导出课表</h3><p>可直接下载 PDF，也可选 Excel 或打印网页版。</p><label>选择周次</label><select data-field="week" aria-label="选择导出周次">${options}</select><label>导出格式</label><select data-field="format" aria-label="选择导出格式"><option value="pdf">PDF（A4 横向周课表）</option><option value="xlsx">Excel（课表 + 课程明细）</option><option value="html">打印网页版（可另存为 PDF）</option></select><div class="actions"><button type="button" data-action="cancel">取消</button><button type="button" data-action="export">导出</button></div></section>`;
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog || event.target.dataset.action === "cancel") dialog.remove();
       if (event.target.dataset.action === "export") {
