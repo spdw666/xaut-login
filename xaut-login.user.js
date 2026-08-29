@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         西理工教务登录助手
 // @namespace    xaut-local
-// @version      0.4
+// @version      0.4.1
 // @description  本地 OCR 识别验证码 + 云更新检查 + 一键导出每周课表
 // @match        https://jwgl.xaut.edu.cn/*
 // @grant        GM_xmlhttpRequest
@@ -59,25 +59,26 @@
     if (Date.now() - lastCheckedAt < UPDATE_CHECK_INTERVAL) return;
     GM_setValue("xautUpdateCheckedAt", Date.now());
 
-    const probe = (url, fallbackUrl) => {
+    // 双源探测：jsDelivr 缓存可能滞后，GitHub raw 永远最新；任一源发现新版本就提示
+    let notified = false;
+    [UPDATE_URL, UPDATE_FALLBACK_URL].forEach((url) => {
       GM_xmlhttpRequest({
         method: "GET",
         url,
         timeout: 10000,
         onload(response) {
+          if (notified) return;
           const match = /@version\s+([0-9.]+)/.exec(response.responseText || "");
           if (match && compareVersions(match[1], GM_info.script.version) > 0) {
+            notified = true;
             showToast(
               `发现新版本 v${match[1]}（当前 v${GM_info.script.version}），点击更新`,
               () => window.open(url, "_blank")
             );
           }
         },
-        onerror: () => { if (fallbackUrl) probe(fallbackUrl, null); },
-        ontimeout: () => { if (fallbackUrl) probe(fallbackUrl, null); },
       });
-    };
-    probe(UPDATE_URL, UPDATE_FALLBACK_URL);
+    });
   }
 
   // ================= 每周课表导出 =================
