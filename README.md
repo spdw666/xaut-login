@@ -4,7 +4,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0f6cbd?style=flat-square)
 ![Runtime](https://img.shields.io/badge/runtime-local%20only-0b8f66?style=flat-square)
-![Version](https://img.shields.io/badge/version-0.6-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.6.1-7c3aed?style=flat-square)
 
 ## 功能
 
@@ -53,7 +53,7 @@ requirements.txt        Python 依赖范围
 
 **如何导出每周课表？** 登录教务系统后打开“个人课表”页面，等课表加载完成后，右下角会出现绿色“📅 导出课表”按钮。选择第几周并点击“导出”后，脚本会调用页面本身的周次切换控件、等课表刷新完成，再下载 CSV（带 UTF-8 BOM，Excel 直接打开中文不乱码）。
 
-**脚本怎么更新？** 脚本每天自动检查一次新版本；有新版本时右下角会弹出提示，点击即可安装。也可以在 Tampermonkey 管理面板手动“检查更新”。更新源：`https://cdn.jsdelivr.net/gh/spdw666/xaut-login@main/xaut-login.user.js`（GitHub 推送后约数分钟生效）。
+**脚本怎么更新？** 脚本每天自动检查一次新版本；有新版本时右下角会弹出提示，点击即可安装。也可以在 Tampermonkey 管理面板手动“检查更新”。更新源：`https://raw.githubusercontent.com/spdw666/xaut-login/main/xaut-login.user.js`（GitHub 推送后通常立即生效）。
 
 **源码放在别的磁盘可以吗？** 可以。所有源码启动脚本都使用自身所在目录，不再依赖固定的 `D:` 路径。
 

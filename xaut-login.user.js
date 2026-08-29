@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         西理工教务登录助手
 // @namespace    xaut-local
-// @version      0.6
+// @version      0.6.1
 // @description  本地 OCR 识别验证码 + 云更新检查 + 一键导出每周课表
 // @match        https://jwgl.xaut.edu.cn/*
 // @grant        GM_xmlhttpRequest
@@ -10,8 +10,8 @@
 // @connect      127.0.0.1
 // @connect      cdn.jsdelivr.net
 // @connect      raw.githubusercontent.com
-// @updateURL    https://cdn.jsdelivr.net/gh/spdw666/xaut-login@main/xaut-login.user.js
-// @downloadURL  https://cdn.jsdelivr.net/gh/spdw666/xaut-login@main/xaut-login.user.js
+// @updateURL    https://raw.githubusercontent.com/spdw666/xaut-login/main/xaut-login.user.js
+// @downloadURL  https://raw.githubusercontent.com/spdw666/xaut-login/main/xaut-login.user.js
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -26,8 +26,9 @@
   const captchaImage = document.getElementById("SafeCodeImg");
 
   // ================= 云更新（每天自动检查一次） =================
-  const UPDATE_URL = "https://cdn.jsdelivr.net/gh/spdw666/xaut-login@main/xaut-login.user.js";
-  const UPDATE_FALLBACK_URL = "https://raw.githubusercontent.com/spdw666/xaut-login/main/xaut-login.user.js";
+  // GitHub Raw 通常随 push 立即可见；jsDelivr 仅作为网络故障时的后备，避免 CDN 缓存延迟阻断更新。
+  const UPDATE_URL = "https://raw.githubusercontent.com/spdw666/xaut-login/main/xaut-login.user.js";
+  const UPDATE_FALLBACK_URL = "https://cdn.jsdelivr.net/gh/spdw666/xaut-login@main/xaut-login.user.js";
   const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000;
 
   function compareVersions(a, b) {
