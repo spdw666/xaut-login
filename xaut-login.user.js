@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         西理工教务登录助手
 // @namespace    xaut-local
-// @version      0.7.2
+// @version      0.7.3
 // @description  本地 OCR 识别验证码 + 云更新检查 + 一键导出每周课表
 // @match        https://jwgl.xaut.edu.cn/*
 // @grant        GM_xmlhttpRequest
@@ -297,8 +297,9 @@
   async function createTimetablePdf(result, title) {
     const rows = result.rows || [];
     const canvas = hostDocument().createElement("canvas");
-    canvas.width = 1684;
-    canvas.height = 1191;
+    // 约 108 DPI 的 A4 横向图层：文字仍清晰，生成和下载速度比 2MP 版本更快。
+    canvas.width = 1263;
+    canvas.height = 893;
     const context = canvas.getContext("2d");
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
@@ -320,14 +321,15 @@
       context.lineWidth = 1;
       context.strokeRect(x, y, width, height);
       context.fillStyle = header ? "#ffffff" : "#1c2c30";
-      context.font = header ? "700 20px Microsoft YaHei, sans-serif" : (x === 56 ? "700 18px Microsoft YaHei, sans-serif" : "18px Microsoft YaHei, sans-serif");
+      context.font = header ? "700 18px Microsoft YaHei, sans-serif" : (x === 56 ? "700 16px Microsoft YaHei, sans-serif" : "15px Microsoft YaHei, sans-serif");
       context.textBaseline = "top";
       const padding = 12;
-      drawWrappedCanvasText(context, value, x + padding, y + padding, width - padding * 2, 25, Math.max(2, Math.floor((height - padding * 2) / 25)));
+      const lineHeight = header ? 23 : 20;
+      drawWrappedCanvasText(context, value, x + padding, y + padding, width - padding * 2, lineHeight, Math.max(2, Math.floor((height - padding * 2) / lineHeight)));
     };
     (rows[0] || []).forEach((value, index) => drawCell(index ? 56 + firstColumn + (index - 1) * columnWidth : 56, top, index ? columnWidth : firstColumn, headerHeight, value, true));
     rows.slice(1).forEach((row, rowIndex) => row.forEach((value, columnIndex) => drawCell(columnIndex ? 56 + firstColumn + (columnIndex - 1) * columnWidth : 56, top + headerHeight + rowIndex * rowHeight, columnIndex ? columnWidth : firstColumn, rowHeight, value, false)));
-    const jpeg = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.94));
+    const jpeg = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86));
     if (!jpeg) throw new Error("无法生成课表 PDF 图片");
     return pdfFromJpeg(new Uint8Array(await jpeg.arrayBuffer()), canvas.width, canvas.height);
   }
@@ -467,6 +469,7 @@
     const printable = format === "html";
     const pdf = format === "pdf";
     const title = `第 ${week || "当前"} 周课表`;
+    if (pdf) showToast("正在生成 PDF…");
     const blob = pdf ? await createTimetablePdf(result, title) : (printable ? new Blob([createPrintableTimetable(result, title)], { type: "text/html;charset=utf-8" }) : createTimetableWorkbook(result));
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -524,14 +527,23 @@
       showToast("页面没有可识别的周次切换控件，请先在教务系统中切到目标周后再导出");
       return;
     }
-    let attempts = 0;
+    showToast(`正在切换到第 ${target} 周…`);
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearInterval(waitForRefresh);
+      exportTimetable(target, format);
+    };
+    // 页面一有新课程就立即导出；旧实现无条件轮询 20 次，最坏会多等约 6 秒。
     const waitForRefresh = setInterval(() => {
       const refreshed = findTimetableGrid();
-      if (refreshed && (timetableSignature(refreshed) !== before || ++attempts >= 20)) {
-        clearInterval(waitForRefresh);
-        exportTimetable(target, format);
-      }
-    }, 300);
+      if (!refreshed || timetableSignature(refreshed) === before) return;
+      const refreshedResult = buildTimetableCsv(refreshed);
+      if (refreshedResult.courseCount) finish();
+    }, 100);
+    // 个别页面没有可观察到的 DOM 变动时，短暂兜底后继续；不再强制等待 6 秒。
+    setTimeout(finish, 1200);
   }
 
   function openExportDialog() {
