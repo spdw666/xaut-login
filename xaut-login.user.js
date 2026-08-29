@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         西理工教务登录助手
 // @namespace    xaut-local
-// @version      0.3
+// @version      0.4
 // @description  本地 OCR 识别验证码 + 云更新检查 + 一键导出每周课表
 // @match        https://jwgl.xaut.edu.cn/*
 // @grant        GM_xmlhttpRequest
@@ -84,9 +84,10 @@
   function findTimetableTable() {
     const direct = document.getElementById("kbtable");
     if (direct) return direct;
+    // 兼容多种课表布局：表内同时出现「周X」列和 节次/大节/小节 字样即可
     for (const table of document.querySelectorAll("table")) {
-      const firstRow = table.querySelector("tr");
-      if (firstRow && /节次/.test(firstRow.textContent) && /星期一/.test(firstRow.textContent)) return table;
+      const text = table.innerText || "";
+      if (/周[一二三四五六日天]/.test(text) && /(节次|大节|小节)/.test(text)) return table;
     }
     return null;
   }
@@ -98,13 +99,22 @@
 
   function buildTimetableCsv(table) {
     const rows = [...table.querySelectorAll("tr")];
-    const headerCells = [...rows[0].querySelectorAll("th, td")].map((c) => (c.innerText || "").trim());
-    const dayCount = headerCells.length - 1;
-    const lines = [[headerCells[0] || "节次", ...headerCells.slice(1, 1 + dayCount)]];
-    for (let i = 1; i < rows.length; i++) {
+    // 找到表头行：至少有 5 个「周X」列
+    let headerIndex = -1;
+    let dayCount = 0;
+    for (let i = 0; i < rows.length && headerIndex < 0; i++) {
       const cells = [...rows[i].querySelectorAll("th, td")];
+      dayCount = cells.filter((c) => /^周[一二三四五六日天]/.test((c.innerText || "").trim())).length;
+      if (dayCount >= 5) headerIndex = i;
+    }
+    if (headerIndex < 0) return "";
+    const headerRow = [...rows[headerIndex].querySelectorAll("th, td")];
+    const lines = [[(headerRow[0].innerText || "节次").trim(), ...headerRow.slice(1, 1 + dayCount).map((c) => (c.innerText || "").trim())]];
+    for (let i = headerIndex + 1; i < rows.length; i++) {
+      const cells = [...rows[i].querySelectorAll("th, td")];
+      if (cells.length < dayCount + 1) continue;
       const label = (cells[0].innerText || "").split("\n")[0].trim();
-      if (!/^第?\s*\d+(\s*-\s*\d+)?\s*节/.test(label)) continue; // 跳过午休等非课节行
+      if (!/(大节|小节|节)/.test(label)) continue; // 跳过午休等非课节行
       const row = [label];
       for (let d = 1; d <= dayCount; d++) row.push(cells[d] ? cellText(cells[d]) : "");
       lines.push(row);
@@ -128,7 +138,9 @@
     const xqm = document.getElementById("xqm");
     const semester = [xnm && xnm.value, xqm && xqm.selectedOptions[0] && xqm.selectedOptions[0].textContent.trim()]
       .filter(Boolean).join("-");
-    const name = (semester || String(new Date().getFullYear())).replace(/[\\/:*?"<>|]/g, "_");
+    // 部分部署没有 xnm/xqm 下拉（本页是日期选择器），回退取页面可见日期
+    const visibleDate = semester ? "" : ((document.body.innerText || "").match(/20\d{2}-\d{2}-\d{2}/) || [])[0];
+    const name = (semester || visibleDate || String(new Date().getFullYear())).replace(/[\\/:*?"<>|]/g, "_");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
