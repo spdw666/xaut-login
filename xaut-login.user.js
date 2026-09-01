@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         西理工教务登录助手
 // @namespace    xaut-local
-// @version      0.7.4
+// @version      0.7.5
 // @description  自动填写账号密码（新旧登录页）+ 验证码识别 + 云更新 + 一键导出课表（PDF/Excel/打印）
 // @match        https://jwgl.xaut.edu.cn/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @connect      *
 // @connect      127.0.0.1
 // @connect      cdn.jsdelivr.net
 // @connect      raw.githubusercontent.com
@@ -20,8 +21,9 @@
 (function () {
   "use strict";
 
-  const STORAGE = { uid: "uid", password: "pwd" };
-  const SERVICE_URL = "http://127.0.0.1:8765/predict";
+  const STORAGE = { uid: "uid", password: "pwd", serviceUrl: "serviceUrl" };
+  const DEFAULT_SERVICE_URL = "http://127.0.0.1:8765/predict";
+  function serviceUrl() { return GM_getValue(STORAGE.serviceUrl, DEFAULT_SERVICE_URL); }
   const input = document.getElementById("RANDOMCODE");
   const accountInput = document.getElementById("userAccount");
   const passwordInput = document.getElementById("userPassword");
@@ -666,11 +668,13 @@
           <h2 class="xaut-login-assistant__title" id="xaut-login-assistant-title">设置登录信息</h2>
         </header>
         <form class="xaut-login-assistant__body">
-          <p class="xaut-login-assistant__hint">信息仅保存在当前浏览器的 Tampermonkey 本地存储中，不会发送给识别服务。</p>
+          <p class="xaut-login-assistant__hint">信息仅保存在当前浏览器的 Tampermonkey 本地存储中，不会发送给识别服务。识别服务地址默认 http://127.0.0.1:8765/predict；手机等设备使用时改为电脑的局域网地址。</p>
           <label class="xaut-login-assistant__label" for="xaut-login-assistant-uid">学号</label>
           <input class="xaut-login-assistant__input" id="xaut-login-assistant-uid" required autocomplete="username" value="${escapeHtml(credentials.uid)}">
           <label class="xaut-login-assistant__label" for="xaut-login-assistant-password">密码</label>
           <input class="xaut-login-assistant__input" id="xaut-login-assistant-password" type="password" required autocomplete="current-password" value="${escapeHtml(credentials.password)}">
+          <label class="xaut-login-assistant__label" for="xaut-login-assistant-service">识别服务地址</label>
+          <input class="xaut-login-assistant__input" id="xaut-login-assistant-service" type="text" value="${escapeHtml(serviceUrl())}" placeholder="http://127.0.0.1:8765/predict">
           <div class="xaut-login-assistant__actions">
             <button class="xaut-login-assistant__button xaut-login-assistant__button--ghost" type="button" data-action="cancel">取消</button>
             <button class="xaut-login-assistant__button xaut-login-assistant__button--primary" type="submit">保存并填入</button>
@@ -688,6 +692,8 @@
       if (!uid || !password) return;
       GM_setValue(STORAGE.uid, uid);
       GM_setValue(STORAGE.password, password);
+      const service = modal.querySelector("#xaut-login-assistant-service").value.trim();
+      GM_setValue(STORAGE.serviceUrl, service || DEFAULT_SERVICE_URL);
       fillCredentials();
       closeSettings();
       setStatus("账号信息已填入", "ready");
@@ -740,7 +746,7 @@
 
     GM_xmlhttpRequest({
       method: "POST",
-      url: SERVICE_URL,
+      url: serviceUrl(),
       timeout: 8000,
       headers: { "Content-Type": "application/json" },
       data: JSON.stringify({ img: canvas.toDataURL("image/png").split(",")[1] }),

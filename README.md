@@ -4,11 +4,12 @@
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0f6cbd?style=flat-square)
 ![Runtime](https://img.shields.io/badge/runtime-local%20only-0b8f66?style=flat-square)
-![Version](https://img.shields.io/badge/version-0.7.4-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.7.5-7c3aed?style=flat-square)
 
 ## 功能
 
 - **自动登录信息**：兼容两种登录页——新版登录页（智慧教学管理与服务平台，无验证码）自动填账号密码；旧版登录页自动识别验证码并填入
+- **手机可用**：识别服务支持局域网监听（`启动识别服务(局域网).bat`），手机 Edge 装 Tampermonkey 后在“登录助手”设置里填电脑的局域网地址即可识别验证码
 - **云更新**：脚本每天自动检查一次 GitHub 最新版本，有新版本时右下角弹提示，点击即可更新（Tampermonkey 也会按 `@updateURL` 自动检测）
 - **按周导出课表**：在教务系统“个人课表”页面右下角点击“📅 导出课表”，可直接下载 A4 横向 PDF，也可选择格式化 Excel 工作簿或打印网页版课表
 
@@ -41,7 +42,8 @@ requirements.txt        Python 依赖范围
 
 ## 隐私与安全边界
 
-- OCR 服务仅监听本机回环地址 `127.0.0.1`，不会对局域网或互联网开放。
+- OCR 服务默认仅监听本机回环地址 `127.0.0.1`，不会对局域网或互联网开放。
+- **局域网模式**（`启动识别服务(局域网).bat`，`XAUT_HOST=0.0.0.0`）会向同一网络内的所有设备开放识别接口（仅接收图片、返回验证码），请在可信网络使用，用完可切回本机模式。
 - 脚本只把验证码图片发送给本机 OCR 服务；账号和密码保存在浏览器的 Tampermonkey 本地存储中。
 - 请仅在获得授权且符合学校教务系统规则的情况下使用，不要用于批量访问或绕过系统管理要求。
 
@@ -52,6 +54,8 @@ requirements.txt        Python 依赖范围
 **验证码没有自动填写？** 先打开 `http://127.0.0.1:8765/health` 检查服务；随后确认 Tampermonkey 脚本已启用。
 
 **如何导出每周课表？** 登录教务系统后打开“个人课表”页面，等课表加载完成后，右下角会出现绿色“📅 导出课表”按钮。选择第几周并点击“导出”后，脚本会调用页面本身的周次切换控件、等课表刷新完成，再下载 CSV（带 UTF-8 BOM，Excel 直接打开中文不乱码）。
+
+**手机上能用吗？** 可以。① 电脑上双击 `启动识别服务(局域网).bat`（首次再双击 `开放8765端口.bat` 放行防火墙）；② 手机 Edge 菜单 → 扩展 → 安装 Tampermonkey，用 Release 地址安装脚本；③ 手机打开登录页 → 右下角「登录助手」→ 把「识别服务地址」改成 `http://电脑局域网IP:8765/predict`（电脑 IP 用 `ipconfig` 查看）→ 保存。手机和电脑需在同一 Wi-Fi。新版登录页无验证码，手机上不配服务地址也能自动填账号密码。
 
 **脚本怎么更新？** 脚本每天自动检查一次新版本；有新版本时右下角会弹出提示，点击即可安装。也可以在 Tampermonkey 管理面板手动“检查更新”。更新源为 GitHub 的最新 Release；每次发布新版 Release 后，所有已安装脚本都会从同一个稳定地址获取更新，不依赖 `main` 分支或 CDN 缓存。
 

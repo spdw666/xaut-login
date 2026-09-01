@@ -47,7 +47,9 @@ def predict():
 
 if __name__ == "__main__":
     try:
-        app.run(host="127.0.0.1", port=8765)
+        # 默认仅本机使用；手机等设备需要连过来时，用“启动识别服务(局域网).bat”
+        # 以 XAUT_HOST=0.0.0.0 启动（局域网内其他设备可调用，注意安全边界）
+        app.run(host=os.environ.get("XAUT_HOST", "127.0.0.1"), port=8765)
     except OSError:
         # 开机自启与手动启动同时发生时，已有服务继续运行即可。
         pass
