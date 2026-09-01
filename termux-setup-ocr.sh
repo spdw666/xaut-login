@@ -15,19 +15,24 @@
 
 set -e
 
-echo "=== 1/4 更新 Termux 软件源（首次运行较慢，请耐心等待）==="
+echo "=== 1/5 更新 Termux 软件源（首次运行较慢，请耐心等待）==="
 pkg update -y
 pkg upgrade -y
 
-echo "=== 2/4 安装 Python 及识别依赖（走 Termux 官方包，避免 pip 没有安卓预编译包）==="
-# onnxruntime / opencv / numpy / pillow 都有 Termux 预编译包；
-# 若某包提示找不到，先执行 termux-change-repo 换源（选国内镜像）再重试。
-pkg install -y python python-opencv onnxruntime python-numpy python-pillow
+echo "=== 2/5 启用 x11 扩展仓库（opencv 的 Python 绑定在这里）==="
+pkg install -y x11-repo
+pkg update
 
-echo "=== 3/4 安装 ddddocr（不装依赖，依赖已由上面的 Termux 包提供）==="
+echo "=== 3/5 安装 Python 及识别依赖（走 Termux 官方包，避免 pip 没有安卓预编译包）==="
+# opencv 的 Python 绑定包名是 opencv-python（在 x11-repo 里）；
+# onnxruntime / numpy / pillow 都在主仓库。
+# 若某包提示找不到，先执行 termux-change-repo 换源（选国内镜像）再重试。
+pkg install -y python opencv-python onnxruntime python-numpy python-pillow
+
+echo "=== 4/5 安装 ddddocr（不装依赖，依赖已由上面的 Termux 包提供）==="
 pip install --no-deps ddddocr
 
-echo "=== 4/4 下载识别服务源码并启动 ==="
+echo "=== 5/5 下载识别服务源码并启动 ==="
 cd ~
 curl -fLO https://raw.githubusercontent.com/spdw666/xaut-login/main/captcha-server.py
 
