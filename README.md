@@ -4,11 +4,11 @@
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0f6cbd?style=flat-square)
 ![Runtime](https://img.shields.io/badge/runtime-local%20only-0b8f66?style=flat-square)
-![Version](https://img.shields.io/badge/version-0.7.3-7c3aed?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.7.4-7c3aed?style=flat-square)
 
 ## 功能
 
-- **免验证码登录**：自动识别验证码，并填入已保存的账号密码
+- **自动登录信息**：兼容两种登录页——新版登录页（智慧教学管理与服务平台，无验证码）自动填账号密码；旧版登录页自动识别验证码并填入
 - **云更新**：脚本每天自动检查一次 GitHub 最新版本，有新版本时右下角弹提示，点击即可更新（Tampermonkey 也会按 `@updateURL` 自动检测）
 - **按周导出课表**：在教务系统“个人课表”页面右下角点击“📅 导出课表”，可直接下载 A4 横向 PDF，也可选择格式化 Excel 工作簿或打印网页版课表
 

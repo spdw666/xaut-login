@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         西理工教务登录助手
 // @namespace    xaut-local
-// @version      0.7.3
-// @description  本地 OCR 识别验证码 + 云更新检查 + 一键导出每周课表
+// @version      0.7.4
+// @description  自动填写账号密码（新旧登录页）+ 验证码识别 + 云更新 + 一键导出课表（PDF/Excel/打印）
 // @match        https://jwgl.xaut.edu.cn/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
@@ -600,7 +600,8 @@
     initTimetableExport();
   }
 
-  if (!input || !captchaImage) return;
+  // 登录页判定：旧版（有验证码）或新版（智慧教学管理与服务平台，无验证码）均可进入
+  if (!accountInput || !passwordInput) return;
 
   let failures = 0;
   let launcher;
@@ -690,7 +691,7 @@
       fillCredentials();
       closeSettings();
       setStatus("账号信息已填入", "ready");
-      predict();
+      if (input && captchaImage) predict();
     });
     document.body.appendChild(modal);
     modal.querySelector("#xaut-login-assistant-uid").focus();
@@ -764,15 +765,23 @@
 
   createLauncher();
   fillCredentials();
-  captchaImage.addEventListener("load", () => {
-    failures = 0;
-    setTimeout(predict, 160);
-  });
-  new MutationObserver(() => {
-    failures = 0;
-    setTimeout(predict, 200);
-  }).observe(captchaImage, { attributes: true, attributeFilter: ["src"] });
 
-  if (!getCredentials().uid || !getCredentials().password) openSettings();
-  else setTimeout(predict, 300);
+  if (input && captchaImage) {
+    // 旧登录页：识别验证码并自动填入
+    captchaImage.addEventListener("load", () => {
+      failures = 0;
+      setTimeout(predict, 160);
+    });
+    new MutationObserver(() => {
+      failures = 0;
+      setTimeout(predict, 200);
+    }).observe(captchaImage, { attributes: true, attributeFilter: ["src"] });
+
+    if (!getCredentials().uid || !getCredentials().password) openSettings();
+    else setTimeout(predict, 300);
+  } else {
+    // 新登录页（智慧教学管理与服务平台）：没有验证码，填好账号密码即可
+    if (!getCredentials().uid || !getCredentials().password) openSettings();
+    else setStatus("账号密码已填入，点登录即可", "ready");
+  }
 })();
