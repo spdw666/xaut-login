@@ -30,8 +30,9 @@ echo "=== 3/5 安装 Python 及识别依赖（走 Termux 官方包，避免 pip 
 # 若某包提示找不到，先执行 termux-change-repo 换源（选国内镜像）再重试。
 pkg install -y python opencv-python python-onnxruntime python-numpy python-pillow dbus
 
-echo "=== 4/5 安装 ddddocr（不装依赖，依赖已由上面的 Termux 包提供）==="
+echo "=== 4/5 安装 ddddocr 和 flask（ddddocr 不装依赖，依赖已由上面的 Termux 包提供；flask 需要它的依赖所以正常装）==="
 pip install --no-deps ddddocr
+pip install flask
 
 echo "=== 5/5 下载识别服务源码并启动 ==="
 cd ~
