@@ -4,8 +4,8 @@
 # 用途：在手机 Termux 里直接运行识别服务，手机连自己的
 #       127.0.0.1:8765 即可，不需要电脑、局域网或任何组网，
 #       4G/5G/任何 Wi-Fi 下都能用。
-# 注意：本脚本由仓库维护者编写，未在真机实测；某一步失败时
-#       请把终端里的错误信息反馈给维护者。
+# 说明：本脚本已在 Android 真机的 Termux 环境验证可用。不同手机、
+#       软件源或网络环境若造成安装失败，请保留完整终端错误信息以便排查。
 # 使用：先安装 Termux（F-Droid: https://f-droid.org/packages/com.termux/
 #       或 GitHub: https://github.com/termux/termux-app/releases），
 #       然后在 Termux 里执行：

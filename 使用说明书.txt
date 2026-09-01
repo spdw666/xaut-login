@@ -54,7 +54,8 @@
       从 URL 安装脚本
    ③ 手机打开登录页 → 右下角"登录助手"→ 把"识别服务地址"改成
       http://电脑IP:8765/predict → 保存，即可自动识别验证码
-   ④ 前提：手机与电脑连接同一 Wi-Fi；新版登录页无验证码，手机不配置也能用
+   ④ 前提：手机与电脑连接同一 Wi-Fi；“开放8765端口.bat”仅放行 Windows
+      “专用网络”。新版登录页无验证码，手机不配置也能用
 4. 手机本地识别（不依赖电脑和网络，推荐）：
    ① 下载 Termux：F-Droid（https://f-droid.org/packages/com.termux/）或
       GitHub Releases（https://github.com/termux/termux-app/releases），
@@ -64,7 +65,9 @@
       然后 bash termux-setup-ocr.sh（一键安装识别服务）
    ③ 识别服务跑在手机自己的 127.0.0.1:8765，脚本设置里填
       http://127.0.0.1:8765/predict 即可，任何网络（4G/5G）都能用
-   ④ 保持 Termux 窗口开着；想后台运行可先执行 termux-wake-lock
+   ④ 已在 Android 真机的 Termux 环境验证可用。不同手机或软件源若有
+      安装错误，请保留完整终端提示后排查
+   ⑤ 保持 Termux 窗口开着；想后台运行可先执行 termux-wake-lock
 2. 按周导出课表：登录教务系统后打开"个人课表"页面，右下角会出现绿色的
    "📅 导出课表"按钮。选择第几周后，可直接下载 A4 横向 PDF，也可下载格式化 Excel 文件或打印网页版课表。
 

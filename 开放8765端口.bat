@@ -10,5 +10,6 @@ netsh advfirewall firewall delete rule name="XAUT OCR 8765" >nul 2>&1
 netsh advfirewall firewall add rule name="XAUT OCR 8765" dir=in action=allow protocol=TCP localport=8765 profile=private
 echo.
 echo Done. Port 8765 is now open for the Private network.
+echo Public network profiles are not changed by this script.
 echo Verify with:  netstat -an | findstr 8765
 pause
