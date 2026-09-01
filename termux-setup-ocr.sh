@@ -25,9 +25,10 @@ pkg update
 
 echo "=== 3/5 安装 Python 及识别依赖（走 Termux 官方包，避免 pip 没有安卓预编译包）==="
 # opencv 的 Python 绑定包名是 opencv-python（在 x11-repo 里）；
-# onnxruntime / numpy / pillow 都在主仓库。
+# onnxruntime 的 Python 模块包名是 python-onnxruntime（onnxruntime 只是 C++ 库）；
+# numpy / pillow 都在主仓库。
 # 若某包提示找不到，先执行 termux-change-repo 换源（选国内镜像）再重试。
-pkg install -y python opencv-python onnxruntime python-numpy python-pillow
+pkg install -y python opencv-python python-onnxruntime python-numpy python-pillow
 
 echo "=== 4/5 安装 ddddocr（不装依赖，依赖已由上面的 Termux 包提供）==="
 pip install --no-deps ddddocr
