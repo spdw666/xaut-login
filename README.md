@@ -56,7 +56,7 @@ requirements.txt        Python 依赖范围
 **如何导出每周课表？** 登录教务系统后打开“个人课表”页面，等课表加载完成后，右下角会出现绿色“📅 导出课表”按钮。选择第几周并点击“导出”后，脚本会调用页面本身的周次切换控件、等课表刷新完成，再下载 CSV（带 UTF-8 BOM，Excel 直接打开中文不乱码）。
 
 **手机上能用吗？** 可以，三种方式任选：
-- **手机本地识别（推荐，任何网络可用）**：手机装 Termux，执行 `bash termux-安装识别服务.sh`（见仓库根目录），服务跑在手机自己的 `127.0.0.1:8765`，脚本设置里填 `http://127.0.0.1:8765/predict`，不依赖电脑与网络。
+- **手机本地识别（推荐，任何网络可用）**：手机先装 Termux——下载地址：F-Droid（[f-droid.org/packages/com.termux](https://f-droid.org/packages/com.termux/)，推荐）或 [GitHub Releases](https://github.com/termux/termux-app/releases)（Google Play 版已停止维护）。在 Termux 里执行 `curl -fLO https://raw.githubusercontent.com/spdw666/xaut-login/main/termux-setup-ocr.sh && bash termux-setup-ocr.sh`（一键安装识别服务），服务跑在手机自己的 `127.0.0.1:8765`，脚本设置里填 `http://127.0.0.1:8765/predict`，不依赖电脑与网络。
 - **同 Wi-Fi 直连电脑**：电脑双击 `启动识别服务(局域网).bat`（首次再双击 `开放8765端口.bat`）；手机脚本设置里填 `http://电脑局域网IP:8765/predict`（电脑 IP 用 `ipconfig` 查看）。
 - **不同网络**：异地组网（蒲公英/ZeroTier，防火墙已放行所有配置文件）后填电脑虚拟 IP，或手机本地识别。
 新版登录页无验证码，手机上不配服务地址也能自动填账号密码。

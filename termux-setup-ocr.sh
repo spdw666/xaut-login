@@ -6,8 +6,11 @@
 #       4G/5G/任何 Wi-Fi 下都能用。
 # 注意：本脚本由仓库维护者编写，未在真机实测；某一步失败时
 #       请把终端里的错误信息反馈给维护者。
-# 使用：把本文件放到手机 Termux 可访问的位置后执行
-#       bash termux-安装识别服务.sh
+# 使用：先安装 Termux（F-Droid: https://f-droid.org/packages/com.termux/
+#       或 GitHub: https://github.com/termux/termux-app/releases），
+#       然后在 Termux 里执行：
+#       curl -fLO https://raw.githubusercontent.com/spdw666/xaut-login/main/termux-setup-ocr.sh
+#       bash termux-setup-ocr.sh
 # ============================================================
 
 set -e
